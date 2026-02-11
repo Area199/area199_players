@@ -141,7 +141,7 @@ def fetch_player_payload(name_query):
 if 'auth_payload' not in st.session_state:
     st.session_state.auth_payload = None
 
-# --- HEADER: LOGO E LOGOUT AFFIANCATI ---
+# --- HEADER: LOGO E LOGOUT ---
 head_col1, head_col2 = st.columns([2, 1])
 with head_col1:
     if os.path.exists("logo.png"):
@@ -173,25 +173,6 @@ if st.session_state.auth_payload is None:
                             st.session_state.auth_payload = payload
                             st.rerun()
             st.error("Credenziali non valide.")
-
-    # --- AGGIUNTA BLU RECUPERO PIN (COME APP COACHING) ---
-    st.markdown("---")
-    with st.expander("❓ Hai dimenticato il PIN?"):
-        st.info("Contatta lo staff per il reset manuale. Scrivi a info@area199.com")
-        tua_email = "info@area199.com"
-        subject_text = "Supporto AREA199: Recupero PIN Atleta"
-        body_text = "Salve Dottore, richiedo il reset del mio PIN per l'accesso alla dashboard."
-        safe_subject = urllib.parse.quote(subject_text)
-        safe_body = urllib.parse.quote(body_text)
-        html_button = f'''
-        <a href="mailto:{tua_email}?subject={safe_subject}&body={safe_body}" target="_blank">
-            <button style="background-color:#1a1a1a; color:white; border:1px solid #E20613; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight: bold; width: 100%; transition: 0.3s;">
-                📧 INVIA RICHIESTA EMAIL
-            </button>
-        </a>
-        '''
-        st.markdown(html_button, unsafe_allow_html=True)
-
 else:
     pay = st.session_state.auth_payload
     info, my_t, tgt, all_t = pay['info'], pay['my_tests'], pay['targets'], pay['all_tests']
@@ -224,7 +205,7 @@ else:
             <div class="stats-grid">
                 <div class="st-row"><span>VEL</span> {scores[0]}</div>
                 <div class="st-row"><span>AGI</span> {scores[1]}</div>
-                <div class="st-row)<span>FIS</span> {scores[2]}</div>
+                <div class="st-row"><span>FIS</span> {scores[2]}</div>
                 <div class="st-row"><span>RES</span> {scores[3]}</div>
                 <div class="st-row"><span>TEC</span> {scores[4]}</div>
             </div>
