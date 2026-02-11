@@ -9,7 +9,7 @@ import os
 import openai
 
 # ==============================================================================
-# 1. BRANDING & UI AREA199
+# 1. BRANDING AREA199
 # ==============================================================================
 def init_area199_ui():
     st.set_page_config(page_title="AREA199 | PLAYER HUB", page_icon="🩸", layout="centered")
@@ -17,18 +17,12 @@ def init_area199_ui():
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;900&display=swap');
             .stApp { background-color: #000000; color: #FFFFFF; font-family: 'Rajdhani', sans-serif; }
-            
             .stButton>button { 
-                border: 2px solid #E20613 !important; 
-                color: #FFFFFF !important; 
-                font-weight: 800 !important; 
-                background-color: #000000 !important;
-                width: 100%; height: 50px;
-                text-transform: uppercase;
-                border-radius: 5px;
+                border: 2px solid #E20613 !important; color: #FFFFFF !important; 
+                font-weight: 800 !important; background-color: #000000 !important;
+                width: 100%; height: 50px; text-transform: uppercase; border-radius: 5px;
             }
-            .stButton>button:hover { background-color: #E20613 !important; color: #FFFFFF !important; }
-
+            .stButton>button:hover { background-color: #E20613 !important; }
             div[data-baseweb="input"] > div { background-color: #111 !important; color: white !important; border: 1px solid #333 !important; }
             input { color: white !important; }
         </style>
@@ -37,156 +31,157 @@ def init_area199_ui():
 init_area199_ui()
 
 # ==============================================================================
-# 2. DATA UTILITIES
+# 2. MOTORE DI CALCOLO GAUSSIANO (ALLINEATO AL COACH HUB)
 # ==============================================================================
-def clean_float(val):
+
+def clean_num(val):
     if val is None or str(val).strip() == "": return 0.0
+    try: return float(str(val).replace(',', '.').strip())
+    except: return 0.0
+
+def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, lower_is_better=False):
+    """Calcola lo score 30-99 basato su Z-Score della coorte d'età (Logica Elite)"""
+    if df_all_tests.empty or raw_value <= 0: return 40
+    
+    # Selezione Coorte (+/- 2 anni)
     try:
-        return float(str(val).replace(',', '.').strip())
-    except:
-        return 0.0
+        df_all_tests['Anno_Rif'] = pd.to_numeric(df_all_tests['Anno_Rif'], errors='coerce')
+        cohort = df_all_tests[(df_all_tests['Anno_Rif'] >= birth_year - 2) & (df_all_tests['Anno_Rif'] <= birth_year + 2)]
+        if len(cohort) < 3: cohort = df_all_tests
+        
+        values = pd.to_numeric(cohort[test_col_name].astype(str).str.replace(',','.'), errors='coerce').dropna()
+        values = values[values > 0].tolist()
+        
+        if len(values) < 2: return 65
+        
+        series = pd.Series(values)
+        mean_val, std_val = series.mean(), series.std()
+        
+        if std_val == 0: return 70
+        
+        z_score = (raw_value - mean_val) / std_val
+        if lower_is_better: z_score = -z_score
+        
+        # Conversione in Percentile (CDF Normale)
+        percentile = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
+        final_score = 30 + (percentile * (99 - 30))
+        return int(max(30, min(99, final_score)))
+    except: return 50
+
+# ==============================================================================
+# 3. DATA ENGINE
+# ==============================================================================
 
 @st.cache_resource
 def get_db():
-    try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
-        return gspread.authorize(creds).open("AREA199_DB")
-    except:
-        st.error("Connessione DB fallita.")
-        st.stop()
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'])
+    return gspread.authorize(creds).open("AREA199_DB")
 
-def get_full_data(db_name):
-    try:
-        sh = get_db()
-        df_p = pd.DataFrame(sh.worksheet("PLAYERS").get_all_records())
-        player_info = None
-        target_login = db_name.lower().strip()
-        
-        for _, row in df_p.iterrows():
-            name_check = f"{str(row['Nome'])} {str(row['Cognome'])}".lower().strip()
-            rev_check = f"{str(row['Cognome'])} {str(row['Nome'])}".lower().strip()
-            if target_login == name_check or target_login == rev_check:
-                player_info = row
-                break
-        
-        if player_info is None: return None, None, None
-        
-        data_t = sh.worksheet("TEST_ARCHIVE").get_all_values()
-        df_t = pd.DataFrame(data_t[1:], columns=data_t[0])
-        my_tests = df_t[df_t['ID_Atleta'].astype(str) == str(player_info['ID'])]
-        
-        df_tgt = pd.DataFrame(sh.worksheet("ROLE_TARGETS").get_all_records())
-        role_tgt = df_tgt[df_tgt['Ruolo'] == player_info['Ruolo']].iloc[0] if not df_tgt[df_tgt['Ruolo'] == player_info['Ruolo']].empty else None
-        
-        return player_info, my_tests, role_tgt
-    except:
-        return None, None, None
-
-def get_ai_feedback(info, scores):
-    try:
-        client = openai.OpenAI(api_key=st.secrets.get("openai_key"))
-        prompt = f"Sei il Dott. Petruzzi, AREA199. Atleta: {info['Nome']} {info['Cognome']} ({info['Ruolo']}). Score: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Analizza punti forti e deboli con rigore scientifico e incoraggiamento. Max 60 parole."
-        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": prompt}])
-        return resp.choices[0].message.content
-    except:
-        return "Performance analizzata. Mantieni l'intensità elevata nella prossima sessione."
+def fetch_data(db_name):
+    sh = get_db()
+    # Atleta
+    df_p = pd.DataFrame(sh.worksheet("PLAYERS").get_all_records())
+    p_info = None
+    target = db_name.lower().strip()
+    for _, row in df_p.iterrows():
+        fn = f"{str(row['Nome'])} {str(row['Cognome'])}".lower().strip()
+        if target == fn or target == f"{str(row['Cognome'])} {str(row['Nome'])}".lower().strip():
+            p_info = row; break
+    if p_info is None: return None, None, None
+    
+    # Test & Target
+    df_t = pd.DataFrame(sh.worksheet("TEST_ARCHIVE").get_all_values())
+    df_t.columns = df_t.iloc[0]; df_t = df_t[1:]
+    role_tgt = pd.DataFrame(sh.worksheet("ROLE_TARGETS").get_all_records())
+    tgt = role_tgt[role_tgt['Ruolo'] == p_info['Ruolo']].iloc[0] if not role_tgt[role_tgt['Ruolo'] == p_info['Ruolo']].empty else None
+    
+    return p_info, df_t[df_t['ID_Atleta'].astype(str) == str(p_info['ID'])], tgt, df_t
 
 # ==============================================================================
-# 3. RENDERING
+# 4. RENDERING DASHBOARD
 # ==============================================================================
 if 'auth' not in st.session_state: st.session_state.auth = False
 
-if os.path.exists("logo.png"):
-    st.image("logo.png", width=140)
-else:
-    st.markdown("<h2 style='color:#E20613;'>AREA 199</h2>", unsafe_allow_html=True)
+# Logo
+if os.path.exists("logo.png"): st.image("logo.png", width=140)
 
 if not st.session_state.auth:
-    with st.form("login_atleta"):
-        user_name = st.text_input("Nome e Cognome")
-        user_pin = st.text_input("PIN Atleta", type="password")
-        if st.form_submit_button("ENTRA"):
-            sh = get_db()
-            records = sh.worksheet("ATHLETE_PINS").get_all_records()
-            for r in records:
-                if str(r.get('name')).strip().lower() == user_name.strip().lower() and str(r.get('pin')).replace(".0","") == user_pin.strip():
-                    info, tests, tgt = get_full_data(user_name)
+    st.subheader("Login Atleta")
+    with st.form("login"):
+        n, p = st.text_input("Nome e Cognome"), st.text_input("PIN", type="password")
+        if st.form_submit_button("ACCEDI"):
+            pins = get_db().worksheet("ATHLETE_PINS").get_all_records()
+            for r in pins:
+                if str(r.get('name')).strip().lower() == n.strip().lower() and str(r.get('pin')).replace(".0","") == p.strip():
+                    info, tests, tgt, all_t = fetch_data(n)
                     if info is not None:
-                        st.session_state.auth, st.session_state.data = True, (info, tests, tgt)
+                        st.session_state.auth, st.session_state.data = True, (info, tests, tgt, all_t)
                         st.rerun()
-            st.error("Credenziali Errate.")
+            st.error("Credenziali non valide.")
 else:
-    info, tests, tgt = st.session_state.data
-    target_scores, current_scores, overall = [75]*5, [50]*5, 50
-    
+    info, tests, tgt, all_t = st.session_state.data
     if st.button("LOGOUT"): st.session_state.auth = False; st.rerun()
 
-    if tests is not None and not tests.empty:
-        last_test = tests.iloc[-1]
+    if not tests.empty:
+        last = tests.iloc[-1]
+        b_year = int(info['Anno'])
         
-        def map_score(val):
-            v = clean_float(val)
-            if v < 10: return int(max(40, min(99, 100 - (v * 5))))
-            return int(max(40, min(99, v / 1.5 if v > 100 else v * 2)))
-
-        current_scores = [map_score(last_test.get('PAC_30m')), map_score(last_test.get('AGI_Illin')), map_score(last_test.get('PHY_Salto')), map_score(last_test.get('STA_YoYo')), map_score(last_test.get('TEC_Skill'))]
-        if tgt is not None:
-            target_scores = [clean_float(tgt.get('PAC_Target')), clean_float(tgt.get('AGI_Target')), clean_float(tgt.get('PHY_Target')), clean_float(tgt.get('STA_Target')), clean_float(tgt.get('TEC_Target'))]
+        # CALCOLO SCORE REALE (GAUSSIANO)
+        s_pac = calculate_dynamic_score('PAC_30m', clean_num(last.get('PAC_30m')), b_year, all_t, True)
+        s_agi = calculate_dynamic_score('AGI_Illin', clean_num(last.get('AGI_Illin')), b_year, all_t, True)
+        s_phy = calculate_dynamic_score('PHY_Salto', clean_num(last.get('PHY_Salto')), b_year, all_t, False)
+        s_sta = calculate_dynamic_score('STA_YoYo', clean_num(last.get('STA_YoYo')), b_year, all_t, False)
+        s_tec = calculate_dynamic_score('TEC_Skill', clean_num(last.get('TEC_Skill')), b_year, all_t, True)
         
-        overall = int(sum(current_scores)/5)
+        scores = [s_pac, s_agi, s_phy, s_res, s_tec] = [s_pac, s_agi, s_phy, s_sta, s_tec]
+        ovr = int(sum(scores)/5)
 
+        # CARD SCUDO BLU
         st.markdown(f"""
-        <div class="shield-main">
-            <div class="header-stats">
-                <div class="val-ovr">{overall}</div>
-                <div class="val-pos">{str(info['Ruolo']).upper()[:3]}</div>
-            </div>
-            <img src="{info['Foto'] if 'http' in str(info['Foto']) else 'https://via.placeholder.com/150'}" class="face-img">
-            <div class="full-name-box">{info['Nome']}<br>{info['Cognome']}</div>
-            <div class="grid-stats">
-                <div class="grid-row"><span>VEL</span> {current_scores[0]}</div>
-                <div class="grid-row"><span>AGI</span> {current_scores[1]}</div>
-                <div class="grid-row"><span>FIS</span> {current_scores[2]}</div>
-                <div class="grid-row"><span>RES</span> {current_scores[3]}</div>
-                <div class="grid-row"><span>TEC</span> {current_scores[4]}</div>
+        <div class="shield">
+            <div class="header-data"><div class="ovr-v">{ovr}</div><div class="pos-v">{str(info['Ruolo']).upper()[:3]}</div></div>
+            <img src="{info['Foto'] if 'http' in str(info['Foto']) else 'https://via.placeholder.com/150'}" class="p-img">
+            <div class="p-name">{info['Nome']}<br>{info['Cognome']}</div>
+            <div class="stats-grid">
+                <div class="row"><span>VEL</span> {scores[0]}</div><div class="row"><span>AGI</span> {scores[1]}</div>
+                <div class="row"><span>FIS</span> {scores[2]}</div><div class="row"><span>RES</span> {scores[3]}</div>
+                <div class="row"><span>TEC</span> {scores[4]}</div>
             </div>
         </div>
         <style>
-            .shield-main {{
+            .shield {{
                 width: 300px; height: 460px; margin: 30px auto; padding: 25px;
                 background: linear-gradient(to bottom, #080c11 0%, #152248 40%, #0d1226 100%);
                 clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 50% 100%, 0% 85%);
                 border-top: 3px solid #E20613; text-align: center; color: white; position: relative;
-                box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+                box-shadow: 0 15px 45px rgba(0,0,0,0.7);
             }}
-            .header-stats {{ position: absolute; top: 25px; left: 25px; text-align: left; }}
-            .val-ovr {{ font-size: 55px; font-weight: 900; line-height: 0.8; }}
-            .val-pos {{ font-size: 18px; color: #E20613; font-weight: bold; }}
-            .face-img {{ width: 155px; height: 155px; object-fit: contain; margin-top: 25px; }}
-            .full-name-box {{ font-size: 21px; font-weight: 900; text-transform: uppercase; margin: 10px 0; border-bottom: 2px solid #E20613; display: inline-block; padding-bottom: 5px; }}
-            .grid-stats {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 40px; font-size: 16px; font-weight: bold; }}
-            .grid-row {{ display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); }}
-            .grid-row span {{ color: #E20613; }}
+            .header-data {{ position: absolute; top: 25px; left: 25px; text-align: left; }}
+            .ovr-v {{ font-size: 55px; font-weight: 900; line-height: 0.8; }}
+            .pos-v {{ font-size: 18px; color: #E20613; font-weight: bold; }}
+            .p-img {{ width: 155px; height: 155px; object-fit: contain; margin-top: 25px; }}
+            .p-name {{ font-size: 21px; font-weight: 900; text-transform: uppercase; line-height: 1; margin: 10px 0; border-bottom: 2px solid #E20613; display: inline-block; padding-bottom: 5px; }}
+            .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 40px; font-size: 16px; font-weight: bold; }}
+            .row {{ display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); }}
+            .row span {{ color: #E20613; }}
         </style>
         """, unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div style="background:#111; padding:20px; border-radius:10px; border-left:5px solid #E20613; margin:25px 0;">
-            <p style="color:#E20613; font-weight:900; margin-bottom:10px;">🧠 ANALISI DOTT. PETRUZZI:</p>
-            <p style="font-style:italic; font-size:1.0em;">"{get_ai_feedback(info, current_scores)}"</p>
-        </div>
-        """, unsafe_allow_html=True)
+        # ANALISI AI DOTT. PETRUZZI
+        try:
+            client = openai.OpenAI(api_key=st.secrets["openai_key"])
+            p_ai = f"Sei il Dott. Petruzzi. Analizza: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]} per un {info['Ruolo']}. Esalta i pregi, sprona sui difetti. Max 50 parole."
+            resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": p_ai}])
+            comm = resp.choices[0].message.content
+        except: comm = "Continua a spingere. La scienza è dalla tua parte."
+        
+        st.markdown(f'<div style="background:#111; padding:20px; border-radius:10px; border-left:5px solid #E20613; margin:25px 0;"><p style="color:#E20613; font-weight:900;">🧠 ANALISI DOTT. PETRUZZI:</p><p style="font-style:italic;">"{comm}"</p></div>', unsafe_allow_html=True)
 
-        st.markdown("<h4 style='text-align:center;'>PERFORMANCE VS OBIETTIVO ELITE</h4>", unsafe_allow_html=True)
-        categories = ['VEL','AGI','FIS','RES','TEC']
-        radar_fig = go.Figure()
-        radar_fig.add_trace(go.Scatterpolar(r=target_scores, theta=categories, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
-        radar_fig.add_trace(go.Scatterpolar(r=current_scores, theta=categories, fill='toself', name='Tua Performance', line_color='#E20613'))
-        radar_fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")),
-            paper_bgcolor='black', font_color='white', showlegend=False, height=500, margin=dict(t=50, b=50)
-        )
-        st.plotly_chart(radar_fig, use_container_width=True, config={'displayModeBar': False})
-    else:
-        st.warning("Dati non disponibili.")
+        # RADAR DUAL (TARGET VERDE + PERFORMANCE ROSSA)
+        t_scores = [tgt.get('PAC_Target',75), tgt.get('AGI_Target',75), tgt.get('PHY_Target',70), tgt.get('STA_Target',70), tgt.get('TEC_Target',75)] if tgt is not None else [75]*5
+        fig = go.Figure()
+        cats = ['VEL','AGI','FIS','RES','TEC']
+        fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
+        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Performance', line_color='#E20613'))
+        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), paper_bgcolor='black', font_color='white', showlegend=False, height=500)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
