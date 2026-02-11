@@ -4,11 +4,12 @@ import plotly.graph_objects as go
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import math
+import urllib.parse
 import os
 import openai
 
 # ==============================================================================
-# 1. BRANDING & UI AREA199 (Blu AREA199 + Rosso Accento)
+# 1. BRANDING & UI AREA199
 # ==============================================================================
 def init_area199_ui():
     st.set_page_config(page_title="AREA199 | PLAYER HUB", page_icon="🩸", layout="centered")
@@ -17,13 +18,21 @@ def init_area199_ui():
             @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;900&display=swap');
             .stApp { background-color: #000000; color: #FFFFFF; font-family: 'Rajdhani', sans-serif; }
             
-            /* FIX BOTTONI: Testo Bianco su Sfondo Rosso */
+            /* STILE BOTTONI AREA199 */
             .stButton>button { 
                 border: 2px solid #E20613 !important; color: #FFFFFF !important; 
                 font-weight: 800 !important; background-color: #E20613 !important;
-                width: 100%; height: 50px; text-transform: uppercase; border-radius: 5px;
+                width: 100%; height: 45px; text-transform: uppercase; border-radius: 5px;
+                transition: 0.3s;
             }
             .stButton>button:hover { background-color: #b1050f !important; border-color: #b1050f !important; }
+
+            /* LOGOUT SPECIFICO (PIÙ PICCOLO) */
+            div.stButton > button[kind="secondary"] {
+                height: 35px !important; font-size: 12px !important; background-color: transparent !important;
+                border: 1px solid #555 !important; color: #888 !important;
+            }
+            div.stButton > button[kind="secondary"]:hover { border-color: #E20613 !important; color: white !important; }
 
             /* INPUT STYLE */
             div[data-baseweb="input"] > div { background-color: #111 !important; color: white !important; border: 1px solid #333 !important; }
@@ -34,28 +43,21 @@ def init_area199_ui():
 init_area199_ui()
 
 # ==============================================================================
-# 2. MOTORE DI CALCOLO SCIENTIFICO (Z-SCORE)
+# 2. MOTORE DI CALCOLO GAUSSIANO (ALLINEATO AL COACH HUB)
 # ==============================================================================
-
 def clean_num(val):
-    """Pulisce i dati da Google Sheets (gestisce virgole e stringhe vuote)"""
     if val is None or str(val).strip() == "" or str(val).strip() == "0": return 0.0
     try: return float(str(val).replace(',', '.').strip())
     except: return 0.0
 
 def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, lower_is_better=False):
-    """Replica esattamente la logica dell'Hub Coach"""
     val = clean_num(raw_value)
     if val <= 0 or df_all_tests.empty: return 40
     
     try:
-        # Trova la colonna corretta (gestisce variazioni di nomi)
-        possible_cols = [test_col_name, test_col_name.lower(), test_col_name.upper()]
-        actual_col = next((c for c in df_all_tests.columns if c in possible_cols), None)
-        
+        actual_col = next((c for c in df_all_tests.columns if c.lower() == test_col_name.lower()), None)
         if not actual_col: return 60
 
-        # Filtro Coorte (Età)
         year_col = next((c for c in df_all_tests.columns if 'Anno' in c or 'Rif' in c), None)
         if year_col:
             df_all_tests[year_col] = pd.to_numeric(df_all_tests[year_col], errors='coerce')
@@ -64,7 +66,6 @@ def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, 
         else:
             cohort = df_all_tests
 
-        # Statistica
         values = pd.to_numeric(cohort[actual_col].astype(str).str.replace(',','.'), errors='coerce').dropna()
         values = values[values > 0].tolist()
         
@@ -72,32 +73,27 @@ def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, 
         
         series = pd.Series(values)
         mu, sigma = series.mean(), series.std()
-        
         if sigma == 0: return 70
         
         z = (val - mu) / sigma
         if lower_is_better: z = -z
         
-        # Formula Percentile Elite
         percentile = 0.5 * (1 + math.erf(z / math.sqrt(2)))
         return int(max(30, min(99, 30 + (percentile * 69))))
     except:
-        return 55 # Fallback leggermente sopra 50 per indicare che il calcolo è attivo
+        return 55
 
 # ==============================================================================
 # 3. ACCESSO DATI CLOUD
 # ==============================================================================
-
 @st.cache_resource
 def get_db():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'])
     return gspread.authorize(creds).open("AREA199_DB")
 
 def fetch_player_payload(name_query):
-    """Recupera tutto il necessario in un colpo solo"""
     try:
         sh = get_db()
-        # 1. Anagrafica
         df_p = pd.DataFrame(sh.worksheet("PLAYERS").get_all_records())
         p_info = None
         q = name_query.lower().strip()
@@ -107,12 +103,10 @@ def fetch_player_payload(name_query):
                 p_info = row; break
         if p_info is None: return None
         
-        # 2. Test Archive (Headers dinamici)
         wks_t = sh.worksheet("TEST_ARCHIVE")
         data_t = wks_t.get_all_values()
         df_t = pd.DataFrame(data_t[1:], columns=data_t[0])
         
-        # 3. Target Ruoli
         df_tgt = pd.DataFrame(sh.worksheet("ROLE_TARGETS").get_all_records())
         tgt = df_tgt[df_tgt['Ruolo'] == p_info['Ruolo']].iloc[0] if not df_tgt[df_tgt['Ruolo'] == p_info['Ruolo']].empty else None
         
@@ -128,16 +122,27 @@ def fetch_player_payload(name_query):
 # ==============================================================================
 # 4. DASHBOARD ATLETA
 # ==============================================================================
-
 if 'auth_payload' not in st.session_state:
     st.session_state.auth_payload = None
 
-# Intestazione Logo
-if os.path.exists("logo.png"):
-    st.image("logo.png", width=140)
+# --- HEADER: LOGO E LOGOUT AFFIANCATI ---
+head_col1, head_col2 = st.columns([2, 1])
+with head_col1:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=130)
+    else:
+        st.markdown("<h2 style='color:#E20613; margin:0;'>AREA 199</h2>", unsafe_allow_html=True)
 
+with head_col2:
+    if st.session_state.auth_payload is not None:
+        st.write("") # Spacer
+        if st.button("🔴 LOGOUT", key="logout_top"):
+            st.session_state.auth_payload = None
+            st.rerun()
+
+# --- LOGICA DI NAVIGAZIONE ---
 if st.session_state.auth_payload is None:
-    st.markdown("<h3 style='text-align:center;'>PERFORMANCE PORTAL</h3>", unsafe_allow_html=True)
+    st.markdown("<br><h3 style='text-align:center;'>PERFORMANCE PORTAL</h3>", unsafe_allow_html=True)
     with st.form("login_atleta"):
         n = st.text_input("Nome e Cognome")
         p = st.text_input("PIN Atleta", type="password")
@@ -153,20 +158,16 @@ if st.session_state.auth_payload is None:
                             st.rerun()
             st.error("Credenziali non valide.")
 else:
-    # Estrazione dati dal payload (Gestione dizionario sicura)
     pay = st.session_state.auth_payload
     info, my_t, tgt, all_t = pay['info'], pay['my_tests'], pay['targets'], pay['all_tests']
     
-    if st.sidebar.button("🔴 ESCI"):
-        st.session_state.auth_payload = None
-        st.rerun()
+    st.write(f"Atleta: **{info['Nome']} {info['Cognome']}**")
+    st.divider()
 
     if not my_t.empty:
         last = my_t.iloc[-1]
         yr = int(info['Anno'])
         
-        # CALCOLO SCORE (Allineato ai nomi colonne Hub)
-        # Nomi colonne standard: PAC_30m, AGI_Illin, PHY_Salto, STA_YoYo, TEC_Skill
         s_vel = calculate_dynamic_score('PAC_30m', last.get('PAC_30m'), yr, all_t, True)
         s_agi = calculate_dynamic_score('AGI_Illin', last.get('AGI_Illin'), yr, all_t, True)
         s_fis = calculate_dynamic_score('PHY_Salto', last.get('PHY_Salto'), yr, all_t, False)
@@ -217,22 +218,22 @@ else:
             client = openai.OpenAI(api_key=st.secrets["openai_key"])
             resp = client.chat.completions.create(
                 model="gpt-4o", 
-                messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi. Analizza: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Atleta: {info['Nome']} {info['Cognome']}. Esalta i pregi e motiva sui gap tecnici. Sii coinciso (max 50 parole)."}]
+                messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi. Analizza: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Atleta: {info['Nome']} {info['Cognome']}. Sii coinciso e tecnico (max 50 parole)."}]
             )
             st.markdown(f"""
-            <div style="background:#111; padding:20px; border-radius:10px; border-left:5px solid #E20613; margin:25px 0;">
+            <div style="background:#111; padding:20px; border-radius:10px; border-left:4px solid #E20613; margin:25px 0;">
                 <p style="color:#E20613; font-weight:900; margin-bottom:10px;">🧠 ANALISI DOTT. PETRUZZI:</p>
                 <p style="font-style:italic; font-size:1.0em; line-height:1.4;">"{resp.choices[0].message.content}"</p>
             </div>""", unsafe_allow_html=True)
         except: pass
 
-        # RADAR DUAL (VERDE TARGET VS ROSSO ATTUALE)
-        st.markdown("<h4 style='text-align:center;'>TUA PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
+        # RADAR PERFORMANCE VS TARGET
+        st.markdown("<h4 style='text-align:center;'>LA TUA PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
         t_scores = [tgt.get('PAC_Target',75), tgt.get('AGI_Target',75), tgt.get('PHY_Target',70), tgt.get('STA_Target',70), tgt.get('TEC_Target',75)] if tgt is not None else [75]*5
         fig = go.Figure()
         cats = ['VEL','AGI','FIS','RES','TEC']
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
-        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='La Tua Card', line_color='#E20613'))
+        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Card', line_color='#E20613'))
         fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), paper_bgcolor='black', font_color='white', showlegend=False, height=500)
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
