@@ -9,7 +9,7 @@ import os
 import openai
 
 # ==============================================================================
-# 1. INIZIALIZZAZIONE BRANDING & UI AREA199
+# 1. BRANDING & UI AREA199
 # ==============================================================================
 def init_area199_ui():
     st.set_page_config(page_title="AREA199 | PLAYER HUB", page_icon="🩸", layout="centered")
@@ -18,23 +18,18 @@ def init_area199_ui():
             @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;900&display=swap');
             .stApp { background-color: #000000; color: #FFFFFF; font-family: 'Rajdhani', sans-serif; }
             
-            /* STILE BOTTONI AREA199 */
             .stButton>button { 
                 border: 2px solid #E20613 !important; color: #FFFFFF !important; 
                 font-weight: 800 !important; background-color: #E20613 !important;
                 width: 100%; height: 45px; text-transform: uppercase; border-radius: 5px;
-                transition: 0.3s;
             }
             .stButton>button:hover { background-color: #b1050f !important; border-color: #b1050f !important; }
 
-            /* LOGOUT SPECIFICO SUPERIORE */
             div.stButton > button[kind="secondary"] {
                 height: 35px !important; font-size: 12px !important; background-color: transparent !important;
                 border: 1px solid #555 !important; color: #888 !important;
             }
-            div.stButton > button[kind="secondary"]:hover { border-color: #E20613 !important; color: white !important; }
 
-            /* INPUT STYLE */
             div[data-baseweb="input"] > div { background-color: #111 !important; color: white !important; border: 1px solid #333 !important; }
             input { color: white !important; }
             label { color: #FFFFFF !important; font-weight: bold; }
@@ -44,27 +39,23 @@ def init_area199_ui():
 init_area199_ui()
 
 # ==============================================================================
-# 2. MOTORE DI CALCOLO SCIENTIFICO (Z-SCORE GAUSSIANO - REALE)
+# 2. MOTORE DI CALCOLO SCIENTIFICO (Z-SCORE REALE - 73)
 # ==============================================================================
 def clean_num(val):
-    """Pulisce i dati gestendo virgole, stringhe vuote e formati misti"""
     if val is None or str(val).strip() in ["", "0", "None"]: return 0.0
-    try:
-        return float(str(val).replace(',', '.').strip())
-    except:
-        return 0.0
+    try: return float(str(val).replace(',', '.').strip())
+    except: return 0.0
 
 def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, lower_is_better=False):
-    """Calcola il punteggio 30-99 basato sulla distribuzione della coorte d'età"""
     val = clean_num(raw_value)
     if val <= 0 or df_all_tests.empty: return 50
     
     try:
-        # Identificazione colonna esatta
+        # Trova colonna ignorando maiuscole/minuscole
         actual_col = next((c for c in df_all_tests.columns if c.lower().strip() == test_col_name.lower().strip()), None)
         if not actual_col: return 60
         
-        # Filtro coorte (Età +/- 2 anni) per confronto equo
+        # Filtro coorte età (+/- 2 anni)
         yr_col = next((c for c in df_all_tests.columns if 'Anno' in c or 'Rif' in c), None)
         if yr_col:
             df_all_tests[yr_col] = pd.to_numeric(df_all_tests[yr_col], errors='coerce')
@@ -73,45 +64,37 @@ def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, 
         else:
             cohort = df_all_tests
 
-        # Pulizia e calcolo Z-Score
-        vals = pd.to_numeric(cohort[actual_col].astype(str).str.replace(',', '.'), errors='coerce').dropna()
-        vals = vals[vals > 0].tolist()
+        # Calcolo statistico
+        values = pd.to_numeric(cohort[actual_col].astype(str).str.replace(',', '.'), errors='coerce').dropna()
+        values = values[values > 0].tolist()
         
-        if len(vals) < 2: return 65
+        if len(values) < 2: return 65
         
-        series = pd.Series(vals)
+        series = pd.Series(values)
         mu, sigma = series.mean(), series.std()
         if sigma == 0: return 70
         
         z = (val - mu) / sigma
         if lower_is_better: z = -z
         
-        # Conversione in percentile (CDF Gaussiana)
-        pct = 0.5 * (1 + math.erf(z / math.sqrt(2)))
-        return int(max(30, min(99, 30 + (pct * 69))))
-    except:
-        return 50
+        percentile = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+        return int(max(30, min(99, 30 + (percentile * 69))))
+    except: return 50
 
 # ==============================================================================
-# 3. DATA ACCESS LAYER (GOOGLE SHEETS)
+# 3. DATA ACCESS LAYER
 # ==============================================================================
 @st.cache_resource
 def get_db():
-    try:
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(
-            st.secrets["gcp_service_account"], 
-            ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        )
-        return gspread.authorize(creds).open("AREA199_DB")
-    except Exception as e:
-        st.error(f"Errore connessione Database: {e}")
-        st.stop()
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        st.secrets["gcp_service_account"], 
+        ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    )
+    return gspread.authorize(creds).open("AREA199_DB")
 
 def fetch_player_payload(name_query):
-    """Fetch integrale di anagrafica, test e target"""
     try:
         sh = get_db()
-        # 1. PLAYERS
         df_p = pd.DataFrame(sh.worksheet("PLAYERS").get_all_records())
         p_info = None
         q = name_query.lower().strip()
@@ -119,31 +102,21 @@ def fetch_player_payload(name_query):
             fn = f"{str(row['Nome'])} {str(row['Cognome'])}".lower().strip()
             rev = f"{str(row['Cognome'])} {str(row['Nome'])}".lower().strip()
             if q == fn or q == rev:
-                p_info = row
-                break
+                p_info = row; break
         if p_info is None: return None
         
-        # 2. TEST_ARCHIVE
         wks_t = sh.worksheet("TEST_ARCHIVE")
-        vals_t = wks_t.get_all_values()
-        df_t = pd.DataFrame(vals_t[1:], columns=vals_t[0])
+        data_t = wks_t.get_all_values()
+        df_t = pd.DataFrame(data_t[1:], columns=data_t[0])
         
-        # 3. ROLE_TARGETS
         df_tgt = pd.DataFrame(sh.worksheet("ROLE_TARGETS").get_all_records())
         tgt = df_tgt[df_tgt['Ruolo'] == p_info['Ruolo']].iloc[0] if not df_tgt[df_tgt['Ruolo'] == p_info['Ruolo']].empty else None
         
-        return {
-            "info": p_info, 
-            "my_tests": df_t[df_t['ID_Atleta'].astype(str) == str(p_info['ID'])], 
-            "targets": tgt, 
-            "all_tests": df_t
-        }
-    except Exception as e:
-        st.error(f"Errore caricamento payload: {e}")
-        return None
+        return {"info": p_info, "my_tests": df_t[df_t['ID_Atleta'].astype(str) == str(p_info['ID'])], "targets": tgt, "all_tests": df_t}
+    except: return None
 
 # ==============================================================================
-# 4. DASHBOARD E RENDERING GRAFICO BLOCCATO
+# 4. DASHBOARD - RENDERING INTEGRALE
 # ==============================================================================
 if 'auth_payload' not in st.session_state:
     st.session_state.auth_payload = None
@@ -162,15 +135,14 @@ with header_col2:
             st.rerun()
 
 if st.session_state.auth_payload is None:
-    # VIEW: LOGIN
-    st.markdown("<br><h3 style='text-align:center;'>PERFORMANCE PORTAL ACCESS</h3>", unsafe_allow_html=True)
-    with st.form("login_form"):
-        n = st.text_input("Nome e Cognome")
-        p = st.text_input("PIN Atleta", type="password")
-        if st.form_submit_button("ENTRA NEL LAB"):
-            pins = get_db().worksheet("ATHLETE_PINS").get_all_records()
+    st.markdown("<br><h3 style='text-align:center;'>PERFORMANCE PORTAL</h3>", unsafe_allow_html=True)
+    with st.form("login"):
+        n, p = st.text_input("Nome e Cognome"), st.text_input("PIN Atleta", type="password")
+        if st.form_submit_button("ACCEDI"):
+            sh = get_db()
+            records = sh.worksheet("ATHLETE_PINS").get_all_records()
             found = False
-            for r in pins:
+            for r in records:
                 if str(r.get('name')).strip().lower() == n.strip().lower() and str(r.get('pin')).replace(".0","").strip() == p.strip():
                     found = True; break
             if found:
@@ -179,20 +151,16 @@ if st.session_state.auth_payload is None:
                     if payload:
                         st.session_state.auth_payload = payload
                         st.rerun()
-            else: st.error("Credenziali non valide.")
+            st.error("Accesso negato.")
 else:
-    # VIEW: DASHBOARD
     pay = st.session_state.auth_payload
     info, my_tests, tgt, all_tests = pay['info'], pay['my_tests'], pay['targets'], pay['all_tests']
     
-    st.write(f"Atleta: **{info['Nome']} {info['Cognome']}**")
-    st.divider()
-
     if not my_tests.empty:
         last = my_tests.iloc[-1]
         yr = int(info['Anno'])
         
-        # Calcolo Score Z-Score (Formula Elite AREA199)
+        # Calcolo Score Z-Score (Logica AREA199)
         s_vel = calculate_dynamic_score('PAC_30m', last.get('PAC_30m'), yr, all_tests, True)
         s_agi = calculate_dynamic_score('AGI_Illin', last.get('AGI_Illin'), yr, all_tests, True)
         s_fis = calculate_dynamic_score('PHY_Salto', last.get('PHY_Salto'), yr, all_tests, False)
@@ -233,33 +201,31 @@ else:
         </style>
         """, unsafe_allow_html=True)
 
-        # AI INSIGHTS
+        # AI FEEDBACK
         try:
             client = openai.OpenAI(api_key=st.secrets.get("openai_key") or st.secrets.get("openai_api_key"))
-            resp = client.chat.completions.create(
-                model="gpt-4o", 
-                messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi. Analizza Gerardo Petruzzi: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Motivante e scientifico. Max 50 parole."}]
-            )
-            st.markdown(f'<div style="background:#111; padding:20px; border-radius:10px; border-left:4px solid #E20613; margin:25px 0;"><p style="color:#E20613; font-weight:900;">🧠 ANALISI DOTT. PETRUZZI:</p><p style="font-style:italic;">"{resp.choices[0].message.content}"</p></div>', unsafe_allow_html=True)
+            resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi. Analizza Gerardo Petruzzi: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Motivante e breve."}])
+            st.markdown(f'<div style="background:#111; padding:20px; border-radius:10px; border-left:5px solid #E20613; margin:25px 0;"><p style="color:#E20613; font-weight:900;">🧠 ANALISI DOTT. PETRUZZI:</p><p style="font-style:italic;">"{resp.choices[0].message.content}"</p></div>', unsafe_allow_html=True)
         except: pass
 
-        # RADAR DUAL (TARGET VS PERFORMANCE) - BLOCCATO
-        st.markdown("<h4 style='text-align:center;'>LA TUA PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
+        # RADAR DUAL - BLOCCO TOTALE ZOOM (FIXED)
+        st.markdown("<h4 style='text-align:center;'>PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
         t_scores = [tgt.get('PAC_Target',75), tgt.get('AGI_Target',75), tgt.get('PHY_Target',70), tgt.get('STA_Target',70), tgt.get('TEC_Target',75)] if tgt is not None else [75]*5
         fig = go.Figure()
         cats = ['VEL','AGI','FIS','RES','TEC']
-        fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
-        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Performance', line_color='#E20613'))
+        fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target', line_color='#00FF00', opacity=0.3))
+        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tu', line_color='#E20613'))
         
+        # Correzione gerarchia: dragmode fuori da polar
         fig.update_layout(
             polar=dict(
                 radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444", fixedrange=True),
                 angularaxis=dict(rotation=90, direction="clockwise", fixedrange=True)
             ),
             paper_bgcolor='black', font_color='white', showlegend=False, height=500,
-            dragmode=False # Disabilita ogni trascinamento o pan
+            dragmode=False 
         )
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False})
-        st.caption(f"Ultimo test: {last['Data']}")
+        st.caption(f"Ultimo test archiviato: {last['Data']}")
     else:
-        st.warning("Nessun dato test trovato.")
+        st.warning("Archivio test vuoto.")
