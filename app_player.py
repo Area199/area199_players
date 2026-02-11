@@ -84,12 +84,28 @@ def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, 
         return 55
 
 # ==============================================================================
-# 3. ACCESSO DATI CLOUD
+# 3. ACCESSO DATI CLOUD & PERSISTENZA AI
 # ==============================================================================
 @st.cache_resource
 def get_db():
     creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'])
     return gspread.authorize(creds).open("AREA199_DB")
+
+def save_ai_comment_to_db(athlete_id, test_date, comment):
+    """Salva il commento nel database per non riconsumare token al prossimo accesso"""
+    try:
+        sh = get_db()
+        wks = sh.worksheet("TEST_ARCHIVE")
+        headers = wks.row_values(1)
+        if "AI_Comment" not in headers: return # Colonna mancante
+        
+        col_idx = headers.index("AI_Comment") + 1
+        records = wks.get_all_records()
+        for i, row in enumerate(records):
+            if str(row.get('ID_Atleta')) == str(athlete_id) and str(row.get('Data')) == str(test_date):
+                wks.update_cell(i + 2, col_idx, comment)
+                break
+    except: pass
 
 def fetch_player_payload(name_query):
     try:
@@ -125,7 +141,7 @@ def fetch_player_payload(name_query):
 if 'auth_payload' not in st.session_state:
     st.session_state.auth_payload = None
 
-# --- HEADER: LOGO E LOGOUT AFFIANCATI ---
+# --- HEADER: LOGO E LOGOUT ---
 head_col1, head_col2 = st.columns([2, 1])
 with head_col1:
     if os.path.exists("logo.png"):
@@ -213,19 +229,27 @@ else:
         </style>
         """, unsafe_allow_html=True)
 
-        # AI ANALYSIS
-        try:
-            client = openai.OpenAI(api_key=st.secrets["openai_key"])
-            resp = client.chat.completions.create(
-                model="gpt-4o", 
-                messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi. Analizza: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Atleta: {info['Nome']} {info['Cognome']}. Sii coinciso e tecnico (max 50 parole)."}]
-            )
-            st.markdown(f"""
+        # --- AI ANALYSIS CON CACHE DB (TOKEN SAVER) ---
+        saved_comm = str(last.get('AI_Comment', '')).strip()
+        if saved_comm and saved_comm not in ["", "0", "nan"]:
+            comm = saved_comm
+        else:
+            with st.spinner("Analisi scientifica in corso..."):
+                try:
+                    client = openai.OpenAI(api_key=st.secrets["openai_key"])
+                    resp = client.chat.completions.create(
+                        model="gpt-4o", 
+                        messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi, scienziato AREA199. Analizza {info['Nome']} {info['Cognome']}: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Ruolo: {info['Ruolo']}. Sii tecnico e motivante. Max 50 parole."}]
+                    )
+                    comm = resp.choices[0].message.content
+                    save_ai_comment_to_db(info['ID'], last['Data'], comm)
+                except: comm = "Analisi pronta per la prossima sessione."
+
+        st.markdown(f"""
             <div style="background:#111; padding:20px; border-radius:10px; border-left:4px solid #E20613; margin:25px 0;">
                 <p style="color:#E20613; font-weight:900; margin-bottom:10px;">🧠 ANALISI DOTT. PETRUZZI:</p>
-                <p style="font-style:italic; font-size:1.0em; line-height:1.4;">"{resp.choices[0].message.content}"</p>
+                <p style="font-style:italic; font-size:1.0em; line-height:1.4;">"{comm}"</p>
             </div>""", unsafe_allow_html=True)
-        except: pass
 
         # RADAR PERFORMANCE (SENZA ZOOM)
         st.markdown("<h4 style='text-align:center;'>PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
@@ -235,7 +259,6 @@ else:
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
         fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tu', line_color='#E20613'))
         
-        # FIX: dragmode=False e config dedicata bloccano lo zoom
         fig.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), 
             paper_bgcolor='black', font_color='white', showlegend=False, height=500,
