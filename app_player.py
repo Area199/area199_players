@@ -227,20 +227,23 @@ else:
             </div>""", unsafe_allow_html=True)
         except: pass
 
-        # RADAR PERFORMANCE (SENZA ZOOM)
+        # RADAR PERFORMANCE (FIXED RANGE = NO ZOOM)
         st.markdown("<h4 style='text-align:center;'>PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
         t_scores = [tgt.get('PAC_Target',75), tgt.get('AGI_Target',75), tgt.get('PHY_Target',70), tgt.get('STA_Target',70), tgt.get('TEC_Target',75)] if tgt is not None else [75]*5
         fig = go.Figure()
         cats = ['VEL','AGI','FIS','RES','TEC']
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
-        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tu', line_color='#E20613'))
+        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Card', line_color='#E20613'))
         
-        # FIX: dragmode=False e config dedicata bloccano lo zoom
+        # FIX: fixedrange=True blocca lo zoom radiale mantenendo l'interazione
         fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), 
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444", fixedrange=True),
+                angularaxis=dict(direction="clockwise", period=5)
+            ), 
             paper_bgcolor='black', font_color='white', showlegend=False, height=500,
             dragmode=False 
         )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False, 'staticPlot': False})
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False})
     else:
         st.warning("Dati non pronti.")
