@@ -165,6 +165,7 @@ if st.session_state.auth_payload is None:
         if st.form_submit_button("ACCEDI"):
             sh = get_db()
             records = sh.worksheet("ATHLETE_PINS").get_all_records()
+            found = False
             for r in records:
                 if str(r.get('name')).strip().lower() == n.strip().lower() and str(r.get('pin')).replace(".0","") == p.strip():
                     with st.spinner("Sincronizzazione..."):
@@ -172,7 +173,27 @@ if st.session_state.auth_payload is None:
                         if payload:
                             st.session_state.auth_payload = payload
                             st.rerun()
-            st.error("Credenziali non valide.")
+            if not st.session_state.auth_payload:
+                st.error("Credenziali non valide.")
+
+    # --- BLOCCO RECUPERO PIN (POSIZIONE CORRETTA) ---
+    st.markdown("---")
+    with st.expander("❓ Hai dimenticato il PIN?"):
+        st.info("Contatta lo staff per il reset manuale. Scrivi a info@area199.com")
+        tua_email = "info@area199.com"
+        subject_text = "Supporto AREA199: Recupero PIN Atleta"
+        body_text = "Salve Dottore, richiedo il reset del mio PIN per l'accesso alla dashboard."
+        safe_subject = urllib.parse.quote(subject_text)
+        safe_body = urllib.parse.quote(body_text)
+        html_button = f'''
+        <a href="mailto:{tua_email}?subject={safe_subject}&body={safe_body}" target="_blank">
+            <button style="background-color:#1a1a1a; color:white; border:1px solid #E20613; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight: bold; width: 100%; transition: 0.3s;">
+                📧 INVIA RICHIESTA EMAIL
+            </button>
+        </a>
+        '''
+        st.markdown(html_button, unsafe_allow_html=True)
+
 else:
     pay = st.session_state.auth_payload
     info, my_t, tgt, all_t = pay['info'], pay['my_tests'], pay['targets'], pay['all_tests']
