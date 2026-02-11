@@ -68,7 +68,7 @@ def get_performance_and_targets(db_name):
 # ==============================================================================
 def get_ai_motivation(info, scores):
     try:
-        client = openai.OpenAI(api_key=st.secrets["openai_api_key"])
+        client = openai.OpenAI(api_key=st.secrets["openai_key"])
         prompt = f"""
         Sei il Dott. Antonio Petruzzi, Human Performance Scientist. 
         Analizza questi score (0-99) per un {info['Ruolo']}: 
