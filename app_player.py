@@ -44,7 +44,7 @@ def init_area199_ui():
 init_area199_ui()
 
 # ==============================================================================
-# 2. MOTORE DI CALCOLO SCIENTIFICO (Z-SCORE GAUSSIANO)
+# 2. MOTORE DI CALCOLO SCIENTIFICO (Z-SCORE GAUSSIANO - REALE)
 # ==============================================================================
 def clean_num(val):
     """Pulisce i dati gestendo virgole, stringhe vuote e formati misti"""
@@ -55,35 +55,40 @@ def clean_num(val):
         return 0.0
 
 def calculate_dynamic_score(test_col_name, raw_value, birth_year, df_all_tests, lower_is_better=False):
-    """Calcola il punteggio 30-99 basato sulla distribuzione statistica della coorte"""
+    """Calcola il punteggio 30-99 basato sulla distribuzione della coorte d'età"""
     val = clean_num(raw_value)
-    if val <= 0 or df_all_tests.empty: return 40
+    if val <= 0 or df_all_tests.empty: return 50
     
     try:
-        actual_col = next((c for c in df_all_tests.columns if c.lower() == test_col_name.lower()), None)
+        # Identificazione colonna esatta
+        actual_col = next((c for c in df_all_tests.columns if c.lower().strip() == test_col_name.lower().strip()), None)
         if not actual_col: return 60
         
-        # Filtro Coorte (Età +/- 2 anni)
-        df_all_tests['Anno_Rif'] = pd.to_numeric(df_all_tests['Anno_Rif'], errors='coerce')
-        cohort = df_all_tests[(df_all_tests['Anno_Rif'] >= birth_year - 2) & (df_all_tests['Anno_Rif'] <= birth_year + 2)]
-        if len(cohort) < 3: cohort = df_all_tests
+        # Filtro coorte (Età +/- 2 anni) per confronto equo
+        yr_col = next((c for c in df_all_tests.columns if 'Anno' in c or 'Rif' in c), None)
+        if yr_col:
+            df_all_tests[yr_col] = pd.to_numeric(df_all_tests[yr_col], errors='coerce')
+            cohort = df_all_tests[(df_all_tests[yr_col] >= birth_year - 2) & (df_all_tests[yr_col] <= birth_year + 2)]
+            if len(cohort) < 3: cohort = df_all_tests
+        else:
+            cohort = df_all_tests
 
-        # Calcolo Statistico Z-Score
-        values = pd.to_numeric(cohort[actual_col].astype(str).str.replace(',', '.'), errors='coerce').dropna()
-        values = values[values > 0].tolist()
+        # Pulizia e calcolo Z-Score
+        vals = pd.to_numeric(cohort[actual_col].astype(str).str.replace(',', '.'), errors='coerce').dropna()
+        vals = vals[vals > 0].tolist()
         
-        if len(values) < 2: return 65
+        if len(vals) < 2: return 65
         
-        series = pd.Series(values)
+        series = pd.Series(vals)
         mu, sigma = series.mean(), series.std()
         if sigma == 0: return 70
         
         z = (val - mu) / sigma
         if lower_is_better: z = -z
         
-        # Conversione in percentile tramite funzione Erf (Curva di Gauss)
-        percentile = 0.5 * (1 + math.erf(z / math.sqrt(2)))
-        return int(max(30, min(99, 30 + (percentile * 69))))
+        # Conversione in percentile (CDF Gaussiana)
+        pct = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+        return int(max(30, min(99, 30 + (pct * 69))))
     except:
         return 50
 
@@ -103,27 +108,27 @@ def get_db():
         st.stop()
 
 def fetch_player_payload(name_query):
-    """Fetch centralizzato di tutti i dati necessari per la dashboard"""
+    """Fetch integrale di anagrafica, test e target"""
     try:
         sh = get_db()
-        # 1. Anagrafica Atleta (Smart Match)
+        # 1. PLAYERS
         df_p = pd.DataFrame(sh.worksheet("PLAYERS").get_all_records())
         p_info = None
         q = name_query.lower().strip()
         for _, row in df_p.iterrows():
             fn = f"{str(row['Nome'])} {str(row['Cognome'])}".lower().strip()
-            rev_fn = f"{str(row['Cognome'])} {str(row['Nome'])}".lower().strip()
-            if q == fn or q == rev_fn:
+            rev = f"{str(row['Cognome'])} {str(row['Nome'])}".lower().strip()
+            if q == fn or q == rev:
                 p_info = row
                 break
         if p_info is None: return None
         
-        # 2. Archivio Test Completo
+        # 2. TEST_ARCHIVE
         wks_t = sh.worksheet("TEST_ARCHIVE")
-        data_t = wks_t.get_all_values()
-        df_t = pd.DataFrame(data_t[1:], columns=data_t[0])
+        vals_t = wks_t.get_all_values()
+        df_t = pd.DataFrame(vals_t[1:], columns=vals_t[0])
         
-        # 3. Target del Ruolo specifico
+        # 3. ROLE_TARGETS
         df_tgt = pd.DataFrame(sh.worksheet("ROLE_TARGETS").get_all_records())
         tgt = df_tgt[df_tgt['Ruolo'] == p_info['Ruolo']].iloc[0] if not df_tgt[df_tgt['Ruolo'] == p_info['Ruolo']].empty else None
         
@@ -138,56 +143,45 @@ def fetch_player_payload(name_query):
         return None
 
 # ==============================================================================
-# 4. LOGICA DASHBOARD & RENDERING
+# 4. DASHBOARD E RENDERING GRAFICO BLOCCATO
 # ==============================================================================
 if 'auth_payload' not in st.session_state:
     st.session_state.auth_payload = None
 
-# --- HEADER FISSO (LOGO E ESCI AFFIANCATI) ---
+# HEADER (Logo + Logout)
 header_col1, header_col2 = st.columns([2, 1])
 with header_col1:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=130)
-    else:
-        st.markdown("<h2 style='color:#E20613; margin:0;'>AREA 199</h2>", unsafe_allow_html=True)
+    if os.path.exists("logo.png"): st.image("logo.png", width=130)
+    else: st.markdown("<h2 style='color:#E20613; margin:0;'>AREA 199</h2>", unsafe_allow_html=True)
 
 with header_col2:
-    if st.session_state.auth_payload is not None:
-        st.write("") # Spacer per allineamento verticale
-        if st.button("🔴 LOGOUT", key="logout_btn", type="secondary"):
+    if st.session_state.auth_payload:
+        st.write("")
+        if st.button("🔴 LOGOUT", key="logout_top", type="secondary"):
             st.session_state.auth_payload = None
             st.rerun()
 
-# --- FLUSSO APPLICAZIONE ---
 if st.session_state.auth_payload is None:
-    # --- VISTA LOGIN ---
+    # VIEW: LOGIN
     st.markdown("<br><h3 style='text-align:center;'>PERFORMANCE PORTAL ACCESS</h3>", unsafe_allow_html=True)
     with st.form("login_form"):
         n = st.text_input("Nome e Cognome")
         p = st.text_input("PIN Atleta", type="password")
         if st.form_submit_button("ENTRA NEL LAB"):
-            sh = get_db()
-            records = sh.worksheet("ATHLETE_PINS").get_all_records()
-            found_cred = False
-            for r in records:
-                db_n = str(r.get('name')).strip().lower()
-                db_p = str(r.get('pin')).replace(".0","").strip()
-                if db_n == n.strip().lower() and db_p == p.strip():
-                    found_cred = True
-                    break
-            
-            if found_cred:
-                with st.spinner("Sincronizzazione dati in corso..."):
+            pins = get_db().worksheet("ATHLETE_PINS").get_all_records()
+            found = False
+            for r in pins:
+                if str(r.get('name')).strip().lower() == n.strip().lower() and str(r.get('pin')).replace(".0","").strip() == p.strip():
+                    found = True; break
+            if found:
+                with st.spinner("Sincronizzazione..."):
                     payload = fetch_player_payload(n)
                     if payload:
                         st.session_state.auth_payload = payload
                         st.rerun()
-                    else:
-                        st.error("Atleta non trovato nel database anagrafico.")
-            else:
-                st.error("Credenziali non valide. Riprova.")
+            else: st.error("Credenziali non valide.")
 else:
-    # --- VISTA DASHBOARD ---
+    # VIEW: DASHBOARD
     pay = st.session_state.auth_payload
     info, my_tests, tgt, all_tests = pay['info'], pay['my_tests'], pay['targets'], pay['all_tests']
     
@@ -198,7 +192,7 @@ else:
         last = my_tests.iloc[-1]
         yr = int(info['Anno'])
         
-        # Calcolo Score Scientifico (Allineato millimetricamente all'Hub)
+        # Calcolo Score Z-Score (Formula Elite AREA199)
         s_vel = calculate_dynamic_score('PAC_30m', last.get('PAC_30m'), yr, all_tests, True)
         s_agi = calculate_dynamic_score('AGI_Illin', last.get('AGI_Illin'), yr, all_tests, True)
         s_fis = calculate_dynamic_score('PHY_Salto', last.get('PHY_Salto'), yr, all_tests, False)
@@ -208,20 +202,15 @@ else:
         scores = [s_vel, s_agi, s_fis, s_res, s_tec]
         ovr = int(sum(scores)/5)
 
-        # RENDERING SCUDO BLU AREA199 PROFESSIONALE
+        # SCUDO BLU
         st.markdown(f"""
         <div class="shield-container">
-            <div class="ovr-header">
-                <div class="ovr-rating">{ovr}</div>
-                <div class="ovr-pos">{str(info['Ruolo']).upper()[:3]}</div>
-            </div>
+            <div class="ovr-header"><div class="ovr-rating">{ovr}</div><div class="ovr-pos">{str(info['Ruolo']).upper()[:3]}</div></div>
             <img src="{info['Foto'] if 'http' in str(info['Foto']) else 'https://via.placeholder.com/150'}" class="p-img">
             <div class="p-name">{info['Nome']}<br>{info['Cognome']}</div>
             <div class="stats-grid">
-                <div class="stat-row"><span>VEL</span> {scores[0]}</div>
-                <div class="stat-row"><span>AGI</span> {scores[1]}</div>
-                <div class="stat-row"><span>FIS</span> {scores[2]}</div>
-                <div class="stat-row"><span>RES</span> {scores[3]}</div>
+                <div class="stat-row"><span>VEL</span> {scores[0]}</div><div class="stat-row"><span>AGI</span> {scores[1]}</div>
+                <div class="stat-row"><span>FIS</span> {scores[2]}</div><div class="stat-row"><span>RES</span> {scores[3]}</div>
                 <div class="stat-row"><span>TEC</span> {scores[4]}</div>
             </div>
         </div>
@@ -244,27 +233,23 @@ else:
         </style>
         """, unsafe_allow_html=True)
 
-        # FEEDBACK AI DOTT. PETRUZZI
+        # AI INSIGHTS
         try:
             client = openai.OpenAI(api_key=st.secrets.get("openai_key") or st.secrets.get("openai_api_key"))
             resp = client.chat.completions.create(
                 model="gpt-4o", 
-                messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi, scienziato AREA199. Analizza Gerardo Petruzzi: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Ruolo: {info['Ruolo']}. Sii tecnico e motivante. Max 50 parole."}]
+                messages=[{"role": "system", "content": f"Sei il Dott. Petruzzi. Analizza Gerardo Petruzzi: VEL:{scores[0]}, AGI:{scores[1]}, FIS:{scores[2]}, RES:{scores[3]}, TEC:{scores[4]}. Motivante e scientifico. Max 50 parole."}]
             )
-            st.markdown(f"""
-            <div style="background:#111; padding:20px; border-radius:10px; border-left:4px solid #E20613; margin:25px 0;">
-                <p style="color:#E20613; font-weight:900; margin-bottom:10px;">🧠 ANALISI DOTT. PETRUZZI:</p>
-                <p style="font-style:italic; font-size:1.0em; line-height:1.4;">"{resp.choices[0].message.content}"</p>
-            </div>""", unsafe_allow_html=True)
+            st.markdown(f'<div style="background:#111; padding:20px; border-radius:10px; border-left:4px solid #E20613; margin:25px 0;"><p style="color:#E20613; font-weight:900;">🧠 ANALISI DOTT. PETRUZZI:</p><p style="font-style:italic;">"{resp.choices[0].message.content}"</p></div>', unsafe_allow_html=True)
         except: pass
 
-        # RADAR CHART DUAL (TARGET VS ATTUALE) - BLOCCO ZOOM FISICO
-        st.markdown("<h4 style='text-align:center;'>GAP ANALYSIS: PERFORMANCE VS TARGET</h4>", unsafe_allow_html=True)
+        # RADAR DUAL (TARGET VS PERFORMANCE) - BLOCCATO
+        st.markdown("<h4 style='text-align:center;'>LA TUA PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
         t_scores = [tgt.get('PAC_Target',75), tgt.get('AGI_Target',75), tgt.get('PHY_Target',70), tgt.get('STA_Target',70), tgt.get('TEC_Target',75)] if tgt is not None else [75]*5
         fig = go.Figure()
         cats = ['VEL','AGI','FIS','RES','TEC']
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
-        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Card', line_color='#E20613'))
+        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Performance', line_color='#E20613'))
         
         fig.update_layout(
             polar=dict(
@@ -272,9 +257,9 @@ else:
                 angularaxis=dict(rotation=90, direction="clockwise", fixedrange=True)
             ),
             paper_bgcolor='black', font_color='white', showlegend=False, height=500,
-            dragmode=False # Disabilita il trascinamento al livello principale del layout
+            dragmode=False # Disabilita ogni trascinamento o pan
         )
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False})
-        st.caption(f"Dati basati sull'ultimo test del: {last['Data']}")
+        st.caption(f"Ultimo test: {last['Data']}")
     else:
-        st.warning("Archivio test non ancora popolato per questo profilo.")
+        st.warning("Nessun dato test trovato.")
