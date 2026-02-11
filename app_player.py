@@ -27,7 +27,7 @@ def init_area199_ui():
             }
             .stButton>button:hover { background-color: #b1050f !important; border-color: #b1050f !important; }
 
-            /* LOGOUT SPECIFICO (PIÙ PICCOLO) */
+            /* LOGOUT SPECIFICO */
             div.stButton > button[kind="secondary"] {
                 height: 35px !important; font-size: 12px !important; background-color: transparent !important;
                 border: 1px solid #555 !important; color: #888 !important;
@@ -43,7 +43,7 @@ def init_area199_ui():
 init_area199_ui()
 
 # ==============================================================================
-# 2. MOTORE DI CALCOLO GAUSSIANO (ALLINEATO AL COACH HUB)
+# 2. MOTORE DI CALCOLO GAUSSIANO (Z-SCORE)
 # ==============================================================================
 def clean_num(val):
     if val is None or str(val).strip() == "" or str(val).strip() == "0": return 0.0
@@ -135,12 +135,12 @@ with head_col1:
 
 with head_col2:
     if st.session_state.auth_payload is not None:
-        st.write("") # Spacer
+        st.write("") 
         if st.button("🔴 LOGOUT", key="logout_top"):
             st.session_state.auth_payload = None
             st.rerun()
 
-# --- LOGICA DI NAVIGAZIONE ---
+# --- NAVIGAZIONE ---
 if st.session_state.auth_payload is None:
     st.markdown("<br><h3 style='text-align:center;'>PERFORMANCE PORTAL</h3>", unsafe_allow_html=True)
     with st.form("login_atleta"):
@@ -151,7 +151,7 @@ if st.session_state.auth_payload is None:
             records = sh.worksheet("ATHLETE_PINS").get_all_records()
             for r in records:
                 if str(r.get('name')).strip().lower() == n.strip().lower() and str(r.get('pin')).replace(".0","") == p.strip():
-                    with st.spinner("Sincronizzazione dati in corso..."):
+                    with st.spinner("Sincronizzazione..."):
                         payload = fetch_player_payload(n)
                         if payload:
                             st.session_state.auth_payload = payload
@@ -177,7 +177,7 @@ else:
         scores = [s_vel, s_agi, s_fis, s_res, s_tec]
         ovr = int(sum(scores)/5)
 
-        # SCUDO BLU AREA199
+        # SCUDO BLU
         st.markdown(f"""
         <div class="card-shield">
             <div class="ovr-header">
@@ -213,7 +213,7 @@ else:
         </style>
         """, unsafe_allow_html=True)
 
-        # ANALISI AI DOTT. PETRUZZI
+        # AI ANALYSIS
         try:
             client = openai.OpenAI(api_key=st.secrets["openai_key"])
             resp = client.chat.completions.create(
@@ -227,14 +227,20 @@ else:
             </div>""", unsafe_allow_html=True)
         except: pass
 
-        # RADAR PERFORMANCE VS TARGET
-        st.markdown("<h4 style='text-align:center;'>LA TUA PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
+        # RADAR PERFORMANCE (SENZA ZOOM)
+        st.markdown("<h4 style='text-align:center;'>PERFORMANCE VS TARGET ELITE</h4>", unsafe_allow_html=True)
         t_scores = [tgt.get('PAC_Target',75), tgt.get('AGI_Target',75), tgt.get('PHY_Target',70), tgt.get('STA_Target',70), tgt.get('TEC_Target',75)] if tgt is not None else [75]*5
         fig = go.Figure()
         cats = ['VEL','AGI','FIS','RES','TEC']
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
-        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tua Card', line_color='#E20613'))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), paper_bgcolor='black', font_color='white', showlegend=False, height=500)
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tu', line_color='#E20613'))
+        
+        # FIX: dragmode=False e config dedicata bloccano lo zoom
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), 
+            paper_bgcolor='black', font_color='white', showlegend=False, height=500,
+            dragmode=False 
+        )
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False, 'staticPlot': False})
     else:
-        st.warning("Dati dei test non ancora pronti per questo profilo.")
+        st.warning("Dati non pronti.")
