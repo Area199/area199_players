@@ -6,287 +6,156 @@ from oauth2client.service_account import ServiceAccountCredentials
 import math
 import time
 import urllib.parse
-import os # Aggiunto per gestire il file logo
+import os
 
 # ==============================================================================
-# 1. CONFIGURAZIONE & STILE
+# 1. INIZIALIZZAZIONE BRANDING AREA199
 # ==============================================================================
-st.set_page_config(page_title="AREA199 | PLAYER ZONE", page_icon="🩸", layout="centered")
+def init_area199_ui():
+    st.set_page_config(page_title="AREA199 | PLAYER HUB", page_icon="🩸", layout="centered")
+    st.markdown("""
+        <style>
+            .stApp { background-color: #000000; color: #FFFFFF; font-family: 'Helvetica', sans-serif; }
+            input { background-color: #111 !important; color: white !important; border: 1px solid #333 !important; }
+            .stButton>button { border: 2px solid #E20613; color: #E20613; font-weight: 800; background: transparent; width: 100%; }
+            .stButton>button:hover { background: #E20613; color: white; }
+            .stAlert { background-color: #1a1a1a; border-left: 5px solid #E20613; color: white; }
+        </style>
+    """, unsafe_allow_html=True)
 
-# CSS DARK / RED IDENTITY
-st.markdown("""
-<style>
-    /* SFONDO E TESTI */
-    .stApp { background-color: #000000; color: #ffffff; font-family: 'Helvetica', sans-serif; }
-    
-    /* INPUT FIELDS */
-    div[data-baseweb="input"] > div { background-color: #111 !important; color: white !important; border: 1px solid #333 !important; }
-    input { color: white !important; }
-    label { color: #E20613 !important; font-weight: bold; }
-    
-    /* BOTTONI */
-    .stButton>button { 
-        border: 2px solid #E20613; color: #E20613; font-weight: 800; 
-        text-transform: uppercase; width: 100%; background-color: transparent; 
-        transition: all 0.3s; padding: 10px;
-    }
-    .stButton>button:hover { 
-        background: #E20613; color: white; box-shadow: 0 0 15px rgba(226, 6, 19, 0.6); border-color: #E20613;
-    }
-    
-    /* TITOLI */
-    h1, h2, h3 { color: #ffffff !important; }
-    
-    /* MESSAGGI */
-    .stAlert { background-color: #1a1a1a; border-left: 5px solid #E20613; color: white; }
-</style>
-""", unsafe_allow_html=True)
+init_area199_ui()
 
 # ==============================================================================
-# 2. MOTORE DATI (BACKEND)
+# 2. CORE: CONNESSIONE E LOGICA SMART MATCH
 # ==============================================================================
 
 @st.cache_resource
 def get_db():
-    """Connessione al Database Google"""
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
-        client = gspread.authorize(creds)
-        return client.open("AREA199_DB")
+        return gspread.authorize(creds).open("AREA199_DB")
     except Exception as e:
-        st.error(f"Errore Connessione DB: {e}")
+        st.error(f"Errore Critico DB: {e}")
         st.stop()
 
-def check_credentials_by_name(name_input, pin_input):
-    """Verifica Nome+PIN nel foglio ATHLETE_PINS."""
+def check_login(name_in, pin_in):
     try:
         sh = get_db()
-        wks = sh.worksheet("ATHLETE_PINS")
-        records = wks.get_all_records()
-        
-        target_name = str(name_input).strip().lower()
-        target_pin = str(pin_input).strip().replace(".0", "")
+        records = sh.worksheet("ATHLETE_PINS").get_all_records()
+        target_n = str(name_in).strip().lower()
+        target_p = str(pin_in).strip().replace(".0", "")
         
         for r in records:
-            db_name = str(r.get('name') or r.get('Name') or '').strip().lower()
-            db_pin = str(r.get('pin') or r.get('PIN') or '').strip().replace(".0", "")
-            
-            if db_name == target_name and db_pin == target_pin:
-                return db_name
-            
-            parts = target_name.split()
-            if len(parts) >= 2:
-                reversed_target = f"{parts[1]} {parts[0]}"
-                if db_name == reversed_target and db_pin == target_pin:
-                    return db_name
+            db_n = str(r.get('name') or '').strip().lower()
+            db_p = str(r.get('pin') or '').strip().replace(".0", "")
+            if db_n == target_n and db_p == target_p: return db_n
         return None
-    except Exception as e:
-        st.error(f"Errore Login: {e}")
-        return None
+    except: return None
 
-def fetch_player_data_smart(login_name):
-    """Usa il nome del login per trovare l'ID in PLAYERS e scaricare i Test."""
+def get_performance_data(db_name):
     try:
         sh = get_db()
-        wks_p = sh.worksheet("PLAYERS")
-        df_p = pd.DataFrame(wks_p.get_all_records())
-        
+        # Recupero ID da PLAYERS
+        df_p = pd.DataFrame(sh.worksheet("PLAYERS").get_all_records())
         found_id = None
         player_info = None
-        target = login_name.lower()
         
-        for idx, row in df_p.iterrows():
-            n = str(row.get('Nome', '')).strip().lower()
-            c = str(row.get('Cognome', '')).strip().lower()
-            combo1 = f"{n} {c}"
-            combo2 = f"{c} {n}"
-            
-            if target == combo1 or target == combo2:
-                found_id = str(row.get('ID'))
+        for _, row in df_p.iterrows():
+            fullName = f"{str(row['Nome'])} {str(row['Cognome'])}".lower()
+            if db_name in fullName or fullName in db_name:
+                found_id = str(row['ID'])
                 player_info = row
                 break
         
-        if not found_id:
-            return "NO_ID", None, None
-            
+        if not found_id: return None, None
+        
+        # Recupero Test
         wks_t = sh.worksheet("TEST_ARCHIVE")
         data_t = wks_t.get_all_values()
-        headers = data_t.pop(0)
-        df_t = pd.DataFrame(data_t, columns=headers)
+        df_t = pd.DataFrame(data_t[1:], columns=data_t[0])
         my_tests = df_t[df_t['ID_Atleta'] == found_id]
         
-        return "OK", player_info, my_tests
-    except Exception as e:
-        return f"ERR: {e}", None, None
+        return player_info, my_tests
+    except: return None, None
 
 # ==============================================================================
-# 3. INTERFACCIA UTENTE (FRONTEND)
+# 3. UI RENDERING
 # ==============================================================================
 
-# --- HEADER CON LOGO FIX ---
-c1, c2, c3 = st.columns([1,2,1])
-with c2:
-    # CORREZIONE 1: Visualizzazione Logo Sicura
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
-    else:
-        st.markdown("<h1 style='text-align:center; color:#E20613; font-weight:900;'>AREA 199</h1>", unsafe_allow_html=True)
+if 'auth' not in st.session_state: st.session_state.auth = False
 
-# --- SESSIONE ---
-if 'user_name' not in st.session_state: st.session_state.user_name = None
-if 'p_info' not in st.session_state: st.session_state.p_info = None
-if 'p_tests' not in st.session_state: st.session_state.p_tests = None
-
-# --- VISTA 1: LOGIN ---
-if st.session_state.user_name is None:
-    st.markdown("---")
-    st.markdown("<h3 style='text-align:center;'>ACCESSO ATLETA</h3>", unsafe_allow_html=True)
-    
-    with st.form("login_form"):
-        name_in = st.text_input("Nome e Cognome")
-        pin_in = st.text_input("PIN Segreto", type="password", max_chars=5)
-        
-        btn = st.form_submit_button("ENTRA NEL LAB")
-        
-        if btn:
-            if not name_in or not pin_in:
-                st.warning("Inserisci Nome e PIN.")
-            else:
-                with st.spinner("Verifica credenziali..."):
-                    db_name_match = check_credentials_by_name(name_in, pin_in)
-                    if db_name_match:
-                        status, info, tests = fetch_player_data_smart(db_name_match)
-                        if status == "OK":
-                            st.session_state.user_name = db_name_match
-                            st.session_state.p_info = info
-                            st.session_state.p_tests = tests
-                            st.rerun()
-                        elif status == "NO_ID":
-                            st.error(f"Login OK, ma non trovo '{db_name_match}' nel database Giocatori.")
-                        else:
-                            st.error(f"Errore Tecnico: {status}")
-                    else:
-                        st.error("Nome o PIN errati.")
-
-    # --- RECUPERO PIN ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("❓ Hai dimenticato il PIN?"):
-        st.info("Richiedi il reset allo staff tecnico.")
-        tua_email = "info@area199.com" 
-        subject = "Supporto AREA199: Perso PIN Atleta"
-        body = "Salve, sono [Nome Atleta], ho smarrito il mio PIN."
-        safe_sub = urllib.parse.quote(subject)
-        safe_body = urllib.parse.quote(body)
-        
-        html_mail = f'''
-        <a href="mailto:{tua_email}?subject={safe_sub}&body={safe_body}" style="text-decoration:none;">
-            <div style="background:#222; border:1px solid #555; color:#ccc; padding:10px; text-align:center; border-radius:5px; font-size:0.9em;">
-                ✉️ INVIA RICHIESTA EMAIL
-            </div>
-        </a>
-        '''
-        st.markdown(html_mail, unsafe_allow_html=True)
-
-# --- VISTA 2: DASHBOARD (CARD) ---
+# --- LOGO ---
+if os.path.exists("logo.png"):
+    st.image("logo.png", width=150)
 else:
-    p = st.session_state.p_info
-    t = st.session_state.p_tests
-    
-    col_l, col_r = st.columns([3,1])
-    with col_l:
-        st.write(f"Ciao, **{p['Nome']}** 👋")
-    with col_r:
-        if st.button("ESCI"):
-            st.session_state.user_name = None
-            st.rerun()
-            
-    st.divider()
+    st.markdown("<h1 style='color:#E20613;'>AREA 199</h1>", unsafe_allow_html=True)
 
-    if t.empty:
-        st.info("⏳ Nessun dato registrato. Attendi i primi test.")
+# --- LOGIN ---
+if not st.session_state.auth:
+    with st.form("login"):
+        n = st.text_input("Nome e Cognome")
+        p = st.text_input("PIN", type="password")
+        if st.form_submit_button("ENTRA NEL LAB"):
+            match = check_login(n, p)
+            if match:
+                info, tests = get_performance_data(match)
+                if info is not None:
+                    st.session_state.auth = True
+                    st.session_state.data = (info, tests)
+                    st.rerun()
+                else: st.error("Atleta non trovato nel Database PLAYERS.")
+            else: st.error("Credenziali Errate.")
+    
+    # Recupero PIN
+    with st.expander("Hai dimenticato il PIN?"):
+        safe_mail = urllib.parse.quote("info@area199.com")
+        safe_sub = urllib.parse.quote("Recupero PIN Atleta")
+        st.markdown(f'<a href="mailto:{safe_mail}?subject={safe_sub}" style="color:#E20613;">Contatta il Dott. Petruzzi</a>', unsafe_allow_html=True)
+
+# --- DASHBOARD ---
+else:
+    info, tests = st.session_state.data
+    if st.button("LOGOUT"):
+        st.session_state.auth = False
+        st.rerun()
+
+    if tests.empty:
+        st.warning("Nessun test disponibile.")
     else:
-        last = t.iloc[-1]
+        last = tests.iloc[-1]
         
-        def get_val(key):
-            try: return float(str(last.get(key, 0)).replace(',', '.'))
-            except: return 0.0
-            
-        v_pac = get_val('PAC_30m')
-        v_agi = get_val('AGI_Illin')
-        v_phy = get_val('PHY_Salto')
-        v_sta = get_val('STA_YoYo')
-        v_tec = get_val('TEC_Skill')
+        # Calcolo Score Placeholder
+        def s(v): 
+            try: return int(max(40, min(99, float(str(v).replace(',','.')) * 10 if float(str(v).replace(',','.')) < 10 else float(str(v).replace(',','.')) / 2))) 
+            except: return 50
         
-        s_vel = int(100 - (v_pac * 8)) if v_pac > 0 else 60
-        s_agi = int(100 - (v_agi * 3)) if v_agi > 0 else 60
-        s_fis = int(v_phy / 1.5) if v_phy > 0 else 60
-        s_res = int(v_sta * 4) if v_sta > 0 else 60
-        s_tec = int(100 - (v_tec * 2)) if v_tec > 0 else 60
-        
-        scores = [max(40, min(99, x)) for x in [s_vel, s_agi, s_fis, s_res, s_tec]]
-        overall = int(sum(scores)/5)
-        
-        # --- RENDER CARD FUT (CORREZIONE 2: UNSAFE_ALLOW_HTML=TRUE) ---
-        card_html_code = f"""
-        <div style="
-            font-family: 'Arial', sans-serif;
-            background: linear-gradient(145deg, #1a1a1a 0%, #000 100%);
-            border: 2px solid #E20613; border-radius: 12px;
-            padding: 20px; text-align: center; color: white;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            max-width: 320px; margin: 0 auto; position: relative;
-        ">
-            <div style="position: absolute; top: 15px; left: 15px; text-align: left;">
-                <div style="font-size: 42px; font-weight: 900; color: #E20613; line-height: 1;">{overall}</div>
-                <div style="font-size: 16px; font-weight: bold;">{str(p['Ruolo'])[:3].upper()}</div>
+        scores = [s(last.get('PAC_30m', 0)), s(last.get('AGI_Illin', 0)), s(last.get('PHY_Salto', 0)), s(last.get('STA_YoYo', 0)), s(last.get('TEC_Skill', 0))]
+        avg = int(sum(scores)/5)
+
+        # CARD HTML
+        card = f"""
+        <div style="background: linear-gradient(145deg, #111, #000); border: 2px solid #E20613; border-radius: 15px; padding: 25px; text-align: center; max-width: 320px; margin: auto; box-shadow: 0 10px 30px rgba(226, 6, 19, 0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 48px; font-weight: 900; color: #E20613;">{avg}</span>
+                <span style="font-weight: bold; color: #888;">{str(info['Ruolo']).upper()[:3]}</span>
             </div>
-            
-            <div style="margin-top: 20px; margin-bottom: 10px;">
-                <img src="{p['Foto'] if str(p['Foto']).startswith('http') else 'https://via.placeholder.com/150'}" 
-                     style="width: 130px; height: 130px; object-fit: contain; filter: drop-shadow(0 0 5px rgba(255,255,255,0.2));">
+            <img src="{info['Foto'] if 'http' in str(info['Foto']) else 'https://via.placeholder.com/150'}" style="width: 140px; height: 140px; object-fit: contain; margin: 15px 0;">
+            <div style="font-size: 24px; font-weight: 900; text-transform: uppercase; border-bottom: 2px solid #E20613; padding-bottom: 5px;">{info['Cognome']}</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; text-align: left; font-weight: bold; font-size: 14px;">
+                <div>VEL <span style="color:#E20613;">{scores[0]}</span></div>
+                <div>AGI <span style="color:#E20613;">{scores[1]}</span></div>
+                <div>FIS <span style="color:#E20613;">{scores[2]}</span></div>
+                <div>RES <span style="color:#E20613;">{scores[3]}</span></div>
+                <div>TEC <span style="color:#E20613;">{scores[4]}</span></div>
+                <div>ALL <span style="color:#888;">{avg}</span></div>
             </div>
-            
-            <div style="font-size: 22px; font-weight: 900; text-transform: uppercase; border-bottom: 2px solid #E20613; padding-bottom: 5px; margin-bottom: 15px;">
-                {p['Cognome']}
-            </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: left; padding: 0 15px; font-size: 14px; font-weight: bold;">
-                <div style="display:flex; justify-content:space-between;"><span>VEL</span> <span style="color:#E20613;">{scores[0]}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span>AGI</span> <span style="color:#E20613;">{scores[1]}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span>FIS</span> <span style="color:#E20613;">{scores[2]}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span>RES</span> <span style="color:#E20613;">{scores[3]}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span>TEC</span> <span style="color:#E20613;">{scores[4]}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span>ALL</span> <span style="color:#888;">{overall}</span></div>
-            </div>
-            
-            <div style="margin-top: 15px; font-size: 10px; color: #666;">AGGIORNATO AL: {last['Data']}</div>
+            <div style="font-size: 10px; color: #444; margin-top: 15px;">DATA TEST: {last['Data']}</div>
         </div>
         """
-        
-        # IMPORTANTE: Questo comando "traduce" l'HTML in grafica
-        st.markdown(card_html_code, unsafe_allow_html=True)
-        
-        # --- GRAFICO RADAR ---
-        st.write("")
-        fig = go.Figure()
-        cats = ['VEL', 'AGI', 'FIS', 'RES', 'TEC']
-        
-        fig.add_trace(go.Scatterpolar(
-            r=scores, theta=cats, fill='toself', name='Tu', 
-            line_color='#E20613', marker=dict(color='white')
-        ))
-        
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(visible=True, range=[0, 100], tickfont=dict(color='#444')),
-                bgcolor='rgba(0,0,0,0)'
-            ),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            margin=dict(t=20, b=20, l=40, r=40),
-            showlegend=False,
-            height=250
-        )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown(card, unsafe_allow_html=True)
+
+        # RADAR
+        fig = go.Figure(data=go.Scatterpolar(r=scores, theta=['VEL','AGI','FIS','RES','TEC'], fill='toself', line_color='#E20613'))
+        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), paper_bgcolor='black', font_color='white', showlegend=False, height=350)
+        st.plotly_chart(fig, use_container_width=True)
