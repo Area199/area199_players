@@ -214,9 +214,10 @@ else:
         scores = [s_vel, s_agi, s_fis, s_res, s_tec]
         ovr = int(sum(scores)/5)
 
-        # SCUDO BLU
+        # SCUDO BLU CON WATERMARK AREA199
         st.markdown(f"""
         <div class="card-shield">
+            <div class="watermark-bg">AREA199 LAB</div>
             <div class="ovr-header">
                 <div class="ovr-val">{ovr}</div>
                 <div class="ovr-pos">{str(info['Ruolo']).upper()[:3]}</div>
@@ -238,7 +239,17 @@ else:
                 clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 50% 100%, 0% 85%);
                 border-top: 3px solid #E20613; text-align: center; color: white; position: relative;
                 box-shadow: 0 15px 45px rgba(0,0,0,0.7);
+                overflow: hidden; /* Fondamentale per il watermark */
             }}
+            .watermark-bg {{
+                position: absolute;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%) rotate(-35deg);
+                font-size: 50px; font-weight: 900;
+                color: rgba(226, 6, 19, 0.15); /* Rosso AREA199 in trasparenza */
+                white-space: nowrap; pointer-events: none; z-index: 0;
+            }}
+            .ovr-header, .p-img, .p-name, .stats-grid {{ position: relative; z-index: 1; }}
             .ovr-header {{ position: absolute; top: 25px; left: 25px; text-align: left; }}
             .ovr-val {{ font-size: 55px; font-weight: 900; line-height: 0.8; }}
             .ovr-pos {{ font-size: 18px; color: #E20613; font-weight: bold; }}
@@ -283,7 +294,17 @@ else:
         fig.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), 
             paper_bgcolor='black', font_color='white', showlegend=False, height=500,
-            dragmode=False 
+            dragmode=False,
+            annotations=[
+                dict(
+                    text="WWW.AREA199.COM",
+                    x=0.5, y=0.5,
+                    xref="paper", yref="paper",
+                    font=dict(size=35, color="rgba(226, 6, 19, 0.2)", family="Rajdhani, sans-serif"),
+                    textangle=-30, showarrow=False,
+                    opacity=0.8
+                )
+            ]
         )
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False, 'staticPlot': False})
     else:
