@@ -227,7 +227,7 @@ else:
         # HTML IMMAGINE WATERMARK (SE PRESENTE)
         watermark_html = f'<img src="{logo_data_uri}" class="watermark-img">' if logo_data_uri else '<div class="watermark-text">AREA199</div>'
 
-        # SCUDO BLU CON WATERMARK LOGO AREA199
+        # SCUDO BLU CON WATERMARK LOGO AREA199 GIGANTE
         st.markdown(f"""
         <div class="card-shield">
             <div class="watermark-bg">
@@ -261,14 +261,14 @@ else:
                 top: 50%; left: 50%;
                 transform: translate(-50%, -50%) rotate(-25deg);
                 pointer-events: none; z-index: 0;
-                width: 250px;
+                width: 700px; /* Logo massiccio, triplicato in dimensione */
                 display: flex; justify-content: center; align-items: center;
             }}
             .watermark-img {{
                 width: 100%; height: auto; opacity: 0.15; filter: grayscale(100%);
             }}
             .watermark-text {{
-                font-size: 50px; font-weight: 900; color: rgba(226, 6, 19, 0.15);
+                font-size: 80px; font-weight: 900; color: rgba(226, 6, 19, 0.15);
             }}
             .ovr-header, .p-img, .p-name, .stats-grid {{ position: relative; z-index: 1; }}
             .ovr-header {{ position: absolute; top: 25px; left: 25px; text-align: left; }}
@@ -312,24 +312,21 @@ else:
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
         fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tu', line_color='#E20613'))
         
-        # AGGIUNTA IMMAGINE LOGO IN BACKGROUND PLOTLY (CORRETTO yanchor="middle")
-        layout_images = []
-        if logo_data_uri:
-            layout_images.append(dict(
-                source=logo_data_uri,
-                xref="paper", yref="paper",
-                x=0.5, y=0.5,
-                sizex=0.7, sizey=0.7,
-                xanchor="center", yanchor="middle",
-                opacity=0.15,
-                layer="below"
-            ))
-
+        # AGGIUNTA TESTO WWW.AREA199.COM IN BACKGROUND PLOTLY
         fig.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")), 
             paper_bgcolor='black', font_color='white', showlegend=False, height=500,
             dragmode=False,
-            images=layout_images
+            annotations=[
+                dict(
+                    text="WWW.AREA199.COM",
+                    x=0.5, y=0.5,
+                    xref="paper", yref="paper",
+                    font=dict(size=35, color="rgba(226, 6, 19, 0.2)", family="Rajdhani, sans-serif"),
+                    textangle=-30, showarrow=False,
+                    opacity=0.8
+                )
+            ]
         )
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False, 'staticPlot': False})
     else:
