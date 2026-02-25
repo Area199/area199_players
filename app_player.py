@@ -224,7 +224,7 @@ else:
         scores = [s_vel, s_agi, s_fis, s_res, s_tec]
         ovr = int(sum(scores)/5)
 
-        # SCUDO BLU CON WATERMARK A PATTERN
+        # SCUDO BLU CON WATERMARK A PATTERN E GRIGLIA SIMMETRICA
         st.markdown(f"""
         <div class="card-shield">
             <div class="watermark-bg"></div>
@@ -256,7 +256,7 @@ else:
                 top: -50%; left: -50%;
                 width: 200%; height: 200%;
                 background-image: url('{logo_data_uri}');
-                background-size: 80px; /* Regola questa dimensione per fare il logo più o meno fitto */
+                background-size: 80px; 
                 background-repeat: repeat;
                 transform: rotate(-25deg);
                 opacity: 0.12; 
@@ -270,8 +270,28 @@ else:
             .ovr-pos {{ font-size: 18px; color: #E20613; font-weight: bold; }}
             .p-img {{ width: 155px; height: 155px; object-fit: contain; margin-top: 25px; }}
             .p-name {{ font-size: 21px; font-weight: 900; text-transform: uppercase; line-height: 1; margin: 10px 0; border-bottom: 2px solid #E20613; display: inline-block; padding-bottom: 5px; }}
-            .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 40px; font-size: 16px; font-weight: bold; }}
-            .st-row {{ display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); }}
+            
+            /* NUOVA GRIGLIA SIMMETRICA */
+            .stats-grid {{ 
+                display: grid; 
+                grid-template-columns: 1fr 1fr; 
+                column-gap: 30px; 
+                row-gap: 8px; 
+                padding: 10px 20px; 
+                font-size: 16px; 
+                font-weight: 900; 
+            }}
+            .st-row {{ 
+                display: flex; 
+                justify-content: space-between; 
+                border-bottom: 1px solid rgba(255,255,255,0.2); 
+                padding-bottom: 2px;
+            }}
+            .st-row:nth-child(5) {{ 
+                grid-column: span 2; 
+                width: 50%; 
+                margin: 0 auto; 
+            }}
             .st-row span {{ color: #E20613; }}
         </style>
         """, unsafe_allow_html=True)
