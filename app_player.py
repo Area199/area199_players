@@ -312,7 +312,7 @@ else:
         fig.add_trace(go.Scatterpolar(r=t_scores, theta=cats, fill='toself', name='Target Elite', line_color='#00FF00', opacity=0.3))
         fig.add_trace(go.Scatterpolar(r=scores, theta=cats, fill='toself', name='Tu', line_color='#E20613'))
         
-        # AGGIUNTA IMMAGINE LOGO IN BACKGROUND PLOTLY
+        # AGGIUNTA IMMAGINE LOGO IN BACKGROUND PLOTLY (CORRETTO yanchor="middle")
         layout_images = []
         if logo_data_uri:
             layout_images.append(dict(
@@ -320,7 +320,7 @@ else:
                 xref="paper", yref="paper",
                 x=0.5, y=0.5,
                 sizex=0.7, sizey=0.7,
-                xanchor="center", yanchor="center",
+                xanchor="center", yanchor="middle",
                 opacity=0.15,
                 layer="below"
             ))
