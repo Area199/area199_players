@@ -224,10 +224,10 @@ else:
         scores = [s_vel, s_agi, s_fis, s_res, s_tec]
         ovr = int(sum(scores)/5)
 
-        # HTML IMMAGINE WATERMARK (SE PRESENTE)
+        # HTML IMMAGINE WATERMARK MASSICCIA
         watermark_html = f'<img src="{logo_data_uri}" class="watermark-img">' if logo_data_uri else '<div class="watermark-text">AREA199</div>'
 
-        # SCUDO BLU CON WATERMARK LOGO AREA199 GIGANTE
+        # SCUDO BLU CON WATERMARK LOGO AREA199 GIGANTE (FORZATO CON !IMPORTANT)
         st.markdown(f"""
         <div class="card-shield">
             <div class="watermark-bg">
@@ -261,11 +261,14 @@ else:
                 top: 50%; left: 50%;
                 transform: translate(-50%, -50%) rotate(-25deg);
                 pointer-events: none; z-index: 0;
-                width: 700px; /* Logo massiccio, triplicato in dimensione */
                 display: flex; justify-content: center; align-items: center;
             }}
             .watermark-img {{
-                width: 100%; height: auto; opacity: 0.15; filter: grayscale(100%);
+                width: 800px !important;       /* Invasione totale */
+                max-width: none !important;    /* Distrugge i limiti imposti da Streamlit */
+                height: auto !important; 
+                opacity: 0.15 !important; 
+                filter: grayscale(100%);
             }}
             .watermark-text {{
                 font-size: 80px; font-weight: 900; color: rgba(226, 6, 19, 0.15);
