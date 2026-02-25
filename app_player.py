@@ -224,15 +224,10 @@ else:
         scores = [s_vel, s_agi, s_fis, s_res, s_tec]
         ovr = int(sum(scores)/5)
 
-        # HTML IMMAGINE WATERMARK MASSICCIA
-        watermark_html = f'<img src="{logo_data_uri}" class="watermark-img">' if logo_data_uri else '<div class="watermark-text">AREA199</div>'
-
-        # SCUDO BLU CON WATERMARK LOGO AREA199 GIGANTE (FORZATO CON !IMPORTANT)
+        # SCUDO BLU CON WATERMARK A PATTERN
         st.markdown(f"""
         <div class="card-shield">
-            <div class="watermark-bg">
-                {watermark_html}
-            </div>
+            <div class="watermark-bg"></div>
             <div class="ovr-header">
                 <div class="ovr-val">{ovr}</div>
                 <div class="ovr-pos">{str(info['Ruolo']).upper()[:3]}</div>
@@ -258,20 +253,16 @@ else:
             }}
             .watermark-bg {{
                 position: absolute;
-                top: 50%; left: 50%;
-                transform: translate(-50%, -50%) rotate(-25deg);
-                pointer-events: none; z-index: 0;
-                display: flex; justify-content: center; align-items: center;
-            }}
-            .watermark-img {{
-                width: 800px !important;       /* Invasione totale */
-                max-width: none !important;    /* Distrugge i limiti imposti da Streamlit */
-                height: auto !important; 
-                opacity: 0.15 !important; 
+                top: -50%; left: -50%;
+                width: 200%; height: 200%;
+                background-image: url('{logo_data_uri}');
+                background-size: 80px; /* Regola questa dimensione per fare il logo più o meno fitto */
+                background-repeat: repeat;
+                transform: rotate(-25deg);
+                opacity: 0.12; 
                 filter: grayscale(100%);
-            }}
-            .watermark-text {{
-                font-size: 80px; font-weight: 900; color: rgba(226, 6, 19, 0.15);
+                pointer-events: none;
+                z-index: 0;
             }}
             .ovr-header, .p-img, .p-name, .stats-grid {{ position: relative; z-index: 1; }}
             .ovr-header {{ position: absolute; top: 25px; left: 25px; text-align: left; }}
